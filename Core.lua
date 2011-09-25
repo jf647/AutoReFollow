@@ -129,7 +129,7 @@ function ARF:UNIT_ENTERED_VEHICLE(event, unit)
 	if unit == "player" then
 		if state == sFOLLOWING then
 			self:Debug("sent STATE INVEHICLE to master")
-			send:SendCommMessage("arf", "STATE INVEHICLE", "WHISPER", master)
+			self:SendCommMessage("arf", "STATE INVEHICLE", "WHISPER", master)
 		end
 	end
 end
@@ -256,6 +256,9 @@ end
 
 -- handle incoming addon messages
 function ARF:OnCommReceived(prefix, message, distribution, sender)
+	if not activated then
+		self:Print("received update from slave while not activated")
+	end
 	self:Debug("received message", prefix, message, distribution, sender)
 	if prefix == "arf" then
 		if not slaves[sender]then
@@ -268,6 +271,9 @@ function ARF:OnCommReceived(prefix, message, distribution, sender)
 				self:Debug("received STATE from", sender)
 				if data == "FOLLOWING" then
 					self:Debug(sender, "state is FOLLOWING")
+					if slaves[sender].state ~= sFOLLOWING then
+						self:Print(sender, "has resumed following")
+					end
 					slaves[sender].state = sFOLLOWING
 				elseif data == "NOTFOLLOWING" then
 					self:Debug(sender, "state is NOTFOLLOWING")
@@ -319,7 +325,7 @@ function ARF:TryFollow()
 	-- if we're in the middle of a spellcast, re-schedule with exponential backoff
 	elseif UnitCastingInfo("player") then
 		self:Debug("sent BUSY (casting) to", master)
-		send:SendCommMessage("arf", "BUSY", "WHISPER", master)
+		self:SendCommMessage("arf", "BUSY", "WHISPER", master)
 		self:Retryfollow()
 	-- if the master is OOR, tell them we can't follow
 	elseif not CheckInteractDistance(master, 4) then
@@ -330,7 +336,7 @@ function ARF:TryFollow()
 	-- if we're busy, we can't follow yet
 	elseif busyuntil ~= nil and busyuntil > time() then
 		self:Debug("sent BUSY (window) to", master)
-		send:SendCommMessage("arf", "BUSY", "WHISPER", master)
+		self:SendCommMessage("arf", "BUSY", "WHISPER", master)
 		self:Retryfollow()
 	else
 		FollowUnit(master)
@@ -361,11 +367,12 @@ function ARF:MaintainSlaves()
 	
 	-- iterate over known slaves
 	for k, v in pairs(slaves) do
+		self:Debug(k, "state is", v.state, "age is", v.age)
 		if v.age < threshold then
 			self:Debug(k, "is stale, setting state to UNKNOWN")
 			v.state = sUNKNOWN
 		end
-		if v.state ~= sFOLLOWING then
+		if v.state == sUNKNOWN or v.state == sNOTFOLLOWING then
 			self:Debug(k, "is not following, sending FOLLOWME")
 			self:SendCommMessage("arf", "FOLLOWME", "WHISPER", k)
 		end

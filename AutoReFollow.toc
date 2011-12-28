@@ -1,9 +1,10 @@
-## Interface: 41000
+## Interface: 43000
 ## Title: AutoReFollow
 ## Author: Karatheya <addons@nadt.net>
-## Version: 1.0.1
+## Version: 1.1.0
 ## Notes: Follow a party member, even if it gets broken
 ## SavedVariablesPerCharacter: ARF_DB
+## RequiredDeps: NADTTrustList
 ## OptionalDeps: Ace3
 
 embeds.xml

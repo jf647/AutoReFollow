@@ -11,7 +11,7 @@ ARF = LibStub("AceAddon-3.0"):NewAddon(
 )
 
 -- constants
-local defaultbackoff = 3
+local defaultbackoff = 1
 local exponent = 1.2
 local mastermaintainperiod = 5
 local slaveupdateperiod = 10
@@ -122,6 +122,7 @@ function ARF:AUTOFOLLOW_END()
 	self:Debug("sent STATE NOTFOLLOWING to master")
 	self:SendCommMessage("arf", "STATE NOTFOLLOWING", "WHISPER", master)
 	busyuntil = time() + (slaveupdateperiod/2)
+	self:RetryFollow()
 end
 
 -- handle vehicle entry
@@ -156,9 +157,12 @@ function ARF:MasterActivate()
 	
 	-- activate trusted party members
 	if GetNumRaidMembers() > 0 then
+		self:Debug("iterating raid members")
 		for i = 1, GetNumRaidMembers() do
+			self:Debug("getting name of raid member "..i)
 			local name = UnitName("raid"..i, true)
-			if ARF_DB.trusted.name then
+			self:Debug("name of raid member "..i.." is "..name)
+			if NTL:IsUnitTrusted(name) and name ~= UnitName("player") then
 				slaves[name]= {}
 				slaves[name].age = time()
 				self:Debug("sending activate to", name)
@@ -166,9 +170,10 @@ function ARF:MasterActivate()
 			end
 		end
 	elseif GetNumPartyMembers() > 0 then
+		self:Debug("iterating party members")
 		for i = 1, GetNumPartyMembers() do
 			local name = UnitName("party"..i, true)
-			if ARF_DB.trusted[name] then
+			if NTL:IsUnitTrusted(name) and name ~= UnitName("player") then
 				slaves[name]= {}
 				slaves[name].age = time()
 				self:Debug("sending activate to", name)
@@ -177,7 +182,7 @@ function ARF:MasterActivate()
 		end
 	end
 	
-	-- schedule maintan slaves timer
+	-- schedule maintain slaves timer
 	timer = self:ScheduleRepeatingTimer("MaintainSlaves", mastermaintainperiod)
 	
 	self:Print("activating")
@@ -192,7 +197,15 @@ function ARF:SlaveActivate(newmaster)
 	self:RegisterEvent("AUTOFOLLOW_BEGIN")
 	self:RegisterEvent("AUTOFOLLOW_END")
 	self:RegisterEvent("UNIT_ENTERED_VEHICLE")
+	self:RegisterEvent("ZONE_CHANGED", "ClearState")
+	self:RegisterEvent("ZONE_CHANGED_INDOORS", "ClearState")
+	self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "ClearState")
 
+	if not NTL:IsUnitTrusted(newmaster) then
+		self:Print("ERROR: activate from untrusted master ", newmaster)
+		return
+	end
+	
 	-- set state
 	activated = true
 	master = newmaster
@@ -271,7 +284,7 @@ function ARF:OnCommReceived(prefix, message, distribution, sender)
 				self:Debug("received STATE from", sender)
 				if data == "FOLLOWING" then
 					self:Debug(sender, "state is FOLLOWING")
-					if slaves[sender].state ~= sFOLLOWING then
+					if slaves[sender].state == sNOTFOLLOWING then
 						self:Print(sender, "has resumed following")
 					end
 					slaves[sender].state = sFOLLOWING
@@ -284,6 +297,9 @@ function ARF:OnCommReceived(prefix, message, distribution, sender)
 				elseif data == "INVEHICLE" then
 					self:Debug(sender, "state is INVEHICLE")
 					slaves[sender].state = sINVEHICLE
+				elseif data == "UNKNOWN" then
+					self:Debug(sender, "state is UNKNOWN")
+					slaves[sender].state = sUNKNOWN
 				end
 			elseif command == "CANTFOLLOW" then
 				self:Debug("received CANTFOLLOW from", sender)
@@ -326,7 +342,7 @@ function ARF:TryFollow()
 	elseif UnitCastingInfo("player") then
 		self:Debug("sent BUSY (casting) to", master)
 		self:SendCommMessage("arf", "BUSY", "WHISPER", master)
-		self:Retryfollow()
+		self:RetryFollow()
 	-- if the master is OOR, tell them we can't follow
 	elseif not CheckInteractDistance(master, 4) then
 		self:Debug("sent CANTFOLLOW to", master)
@@ -337,7 +353,7 @@ function ARF:TryFollow()
 	elseif busyuntil ~= nil and busyuntil > time() then
 		self:Debug("sent BUSY (window) to", master)
 		self:SendCommMessage("arf", "BUSY", "WHISPER", master)
-		self:Retryfollow()
+		self:RetryFollow()
 	else
 		FollowUnit(master)
 	end
@@ -405,6 +421,12 @@ function ARF:UpdateMaster()
 		end
 	end
 	
+end
+
+-- our zone changed; assume that we're not following and push state to the master
+function ARF:ClearState()
+		self:Debug("sent STATE UNKNOWN to", master)
+		self:SendCommMessage("arf", "STATE UNKNOWN", "WHISPER", master)
 end
 
 --

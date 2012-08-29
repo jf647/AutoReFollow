@@ -128,14 +128,14 @@ function ARF:ActivateSlave(name)
 	slaves[name]= {}
 	slaves[name].age = time()
 	self:Debug("sending activate to", name)
-	self:SendCommMessage("arf", "ACTIVATE", "WHISPER", name)
+	if UnitExists(name) and UnitExists(name) then self:SendCommMessage("arf", "ACTIVATE", "WHISPER", name) end
 end
 
 function ARF:DeactivateSlave(name)
 	if not slaves[name] then return end
 	slaves[name] = nil
 	self:Debug("sending deactivate to", name)
-	self:SendCommMessage("arf", "DEACTIVATE", "WHISPER", name)
+	if UnitExists(name) and UnitExists(name) then self:SendCommMessage("arf", "DEACTIVATE", "WHISPER", name) end
 end
 
 -- handle autofollow changes
@@ -144,7 +144,7 @@ function ARF:AUTOFOLLOW_BEGIN(event, name)
 	if name == master then
 		state = sFOLLOWING
 		self:Debug("sent STATE FOLLOWING to master")
-		if UnitInParty(master) then self:SendCommMessage("arf", "STATE FOLLOWING", "WHISPER", master) end
+		if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE FOLLOWING", "WHISPER", master) end
 		backoff = defaultbackoff
 	else
 		self:Debug("auto following, but not my master")
@@ -155,7 +155,7 @@ function ARF:AUTOFOLLOW_END()
 	self:Debug("AUTOFOLLOW_END")
 	state = sNOTFOLLOWING
 	self:Debug("sent STATE NOTFOLLOWING to master")
-	if UnitInParty(master) then self:SendCommMessage("arf", "STATE NOTFOLLOWING", "WHISPER", master) end
+	if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE NOTFOLLOWING", "WHISPER", master) end
 	busyuntil = time() + (slaveupdateperiod/2)
 	self:RetryFollow()
 end
@@ -165,8 +165,14 @@ function ARF:UNIT_ENTERED_VEHICLE(event, unit)
 	if unit == "player" then
 		if state == sFOLLOWING then
 			self:Debug("sent STATE INVEHICLE to master")
-			if UnitInParty(master) then self:SendCommMessage("arf", "STATE INVEHICLE", "WHISPER", master) end
+			if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE INVEHICLE", "WHISPER", master) end
 		end
+	end
+end
+
+-- handle NPC gossip windows
+function ARF:GOSSIP_SHOW(event)
+		self:RetryFollow()
 	end
 end
 
@@ -217,6 +223,7 @@ function ARF:SlaveActivate(newmaster)
 	self:RegisterEvent("PLAYER_REGEN_ENABLED")
 	self:RegisterEvent("AUTOFOLLOW_BEGIN")
 	self:RegisterEvent("AUTOFOLLOW_END")
+	self:RegisterEvent("GOSSIP_SHOW")
 	self:RegisterEvent("UNIT_ENTERED_VEHICLE")
 	self:RegisterEvent("ZONE_CHANGED", "ClearState")
 	self:RegisterEvent("ZONE_CHANGED_INDOORS", "ClearState")
@@ -289,16 +296,21 @@ end
 -- handle incoming addon messages
 function ARF:OnCommReceived(prefix, message, distribution, sender)
 	if not activated then
-		self:Print("received update from slave while not activated")
+		self:Print("received comms from", sender, "while not activated")
+		if mode == mMASTER then
+			self:MasterActivate()
+		else
+			self:SlaveActivate(sender)
+		end
 	end
 	self:Debug("received message", prefix, message, distribution, sender)
 	if prefix == "arf" then
-		if not slaves[sender]then
-			slaves[sender] = {}
-		end
-		slaves[sender].age = time()
 		local command, data = message:match("^(%S*)%s*(.-)$")
 		if mode == mMASTER then
+			if not slaves[sender]then
+				slaves[sender] = {}
+			end
+			slaves[sender].age = time()
 			if command == "STATE" then
 				self:Debug("received STATE from", sender)
 				if data == "FOLLOWING" then
@@ -333,10 +345,6 @@ function ARF:OnCommReceived(prefix, message, distribution, sender)
 		else
 			if command == "FOLLOWME" then
 				self:Debug("received FOLLOWME from", sender)
-				if not activated then
-					self:Debug("FOLLOWME while not activated; activating")
-					self:SlaveActivate(sender)
-				end
 				self:TryFollow()
 			elseif command == "ACTIVATE" then
 				self:Debug("received ACTIVATE from", sender)
@@ -354,24 +362,24 @@ function ARF:TryFollow()
 	-- if we're in a vehicle, we can't re-follow
 	if UnitInVehicle("player") then
 		self:Debug("sent CANTFOLLOWVEHICLE to", master)
-		if UnitInParty(master) then self:SendCommMessage("arf", "CANTFOLLOWVEHICLE", "WHISPER", master) end
+		if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "CANTFOLLOWVEHICLE", "WHISPER", master) end
 		self:Debug("sent STATE INVEHICLE to", master)
-		if UnitInParty(master) then self:SendCommMessage("arf", "STATE INVEHICLE", "WHISPER", master) end
+		if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE INVEHICLE", "WHISPER", master) end
 	-- if we're in the middle of a spellcast, re-schedule with exponential backoff
 	elseif UnitCastingInfo("player") then
 		self:Debug("sent BUSY (casting) to", master)
-		if UnitInParty(master) then self:SendCommMessage("arf", "BUSY", "WHISPER", master) end
+		if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "BUSY", "WHISPER", master) end
 		self:RetryFollow()
 	-- if the master is OOR, tell them we can't follow
 	elseif not CheckInteractDistance(master, 4) then
 		self:Debug("sent CANTFOLLOW to", master)
-		if UnitInParty(master) then self:SendCommMessage("arf", "CANTFOLLOW", "WHISPER", master) end
+		if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "CANTFOLLOW", "WHISPER", master) end
 		self:Debug("sent STATE OOR to", master)
-		if UnitInParty(master) then self:SendCommMessage("arf", "STATE OOR", "WHISPER", master) end
+		if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE OOR", "WHISPER", master) end
 	-- if we're busy, we can't follow yet
 	elseif busyuntil ~= nil and busyuntil > time() then
 		self:Debug("sent BUSY (window) to", master)
-		if UnitInParty(master) then self:SendCommMessage("arf", "BUSY", "WHISPER", master) end
+		if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "BUSY", "WHISPER", master) end
 		self:RetryFollow()
 	else
 		FollowUnit(master)
@@ -409,7 +417,7 @@ function ARF:MaintainSlaves()
 		end
 		if v.state == sUNKNOWN or v.state == sNOTFOLLOWING then
 			self:Debug(k, "is not following, sending FOLLOWME")
-			if UnitInParty(k) then self:SendCommMessage("arf", "FOLLOWME", "WHISPER", k) end
+			if UnitInParty(k) and UnitExists(k) then self:SendCommMessage("arf", "FOLLOWME", "WHISPER", k) end
 		end
 	end
 
@@ -423,20 +431,20 @@ function ARF:UpdateMaster()
 	-- are we following?
 	if state == sFOLLOWING then
 		self:Debug("sent STATE FOLLOWING to", master)
-		if UnitInParty(master) then self:SendCommMessage("arf", "STATE FOLLOWING", "WHISPER", master) end
+		if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE FOLLOWING", "WHISPER", master) end
 	elseif state == sNOTFOLLOWING then
 		-- is the master out of range?
 		if not CheckInteractDistance(master, 4) then
 			self:Debug("sent STATE OOR to", master)
-			if UnitInParty(master) then self:SendCommMessage("arf", "STATE OOR", "WHISPER", master) end
+			if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE OOR", "WHISPER", master) end
 		-- are we on a vehicle?
 		elseif UnitInVehicle("player") then
 			self:Debug("sent STATE INVEHICLE to", master)
-			if UnitInParty(master) then self:SendCommMessage("arf", "STATE INVEHICLE", "WHISPER", master) end
+			if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE INVEHICLE", "WHISPER", master) end
 		-- not following for no good reason
 		else
 			self:Debug("sent STATE NOTFOLLOWING to", master)
-			if UnitInParty(master) then self:SendCommMessage("arf", "STATE NOTFOLLOWING", "WHISPER", master) end
+			if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE NOTFOLLOWING", "WHISPER", master) end
 		end
 	end
 	
@@ -445,7 +453,7 @@ end
 -- our zone changed; assume that we're not following and push state to the master
 function ARF:ClearState()
 		self:Debug("sent STATE UNKNOWN to", master)
-		if UnitInParty(master) then self:SendCommMessage("arf", "STATE UNKNOWN", "WHISPER", master) end
+		if UnitInParty(master) and UnitExists(master) then self:SendCommMessage("arf", "STATE UNKNOWN", "WHISPER", master) end
 end
 
 --

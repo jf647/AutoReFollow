@@ -102,8 +102,6 @@ end
 -- handle group member changes
 function ARF:UpdateGroup()
 
-	if IsInRaid() then return end
-
 	-- remove lame slaves
 	for k, v in pairs(slaves) do
 		if not UnitInParty(k) then
@@ -113,10 +111,19 @@ function ARF:UpdateGroup()
 	
 	-- add new trusted members
 	if GetNumGroupMembers() > 0 then
-		for i = 1, GetNumGroupMembers() do
-			local name = UnitName("party"..i, true)
-			if not slaves[name] and NTL:IsUnitTrusted(name) then
-				self:ActivateSlave(name)
+		if IsInRaid() then
+			for i = 1, GetNumGroupMembers() do
+				local name = UnitName("raid"..i, true)
+				if not slaves[name] and NTL:IsUnitTrusted(name) then
+					self:ActivateSlave(name)
+				end
+			end
+		else
+			for i = 1, GetNumGroupMembers() do
+				local name = UnitName("party"..i, true)
+				if not slaves[name] and NTL:IsUnitTrusted(name) then
+					self:ActivateSlave(name)
+				end
 			end
 		end
 	end
@@ -197,12 +204,22 @@ function ARF:MasterActivate()
 	activated = true
 	
 	-- activate trusted party members
-	if GetNumGroupMembers() > 0 and not IsInRaid() then
-		self:Debug("iterating party members")
-		for i = 1, GetNumGroupMembers() do
-			local name = UnitName("party"..i, true)
-			if name ~= UnitName("player") and NTL:IsUnitTrusted(name) then
-				self:ActivateSlave(name)
+	if GetNumGroupMembers() > 0 then
+		if IsInRaid() then
+			self:Debug("iterating raid members")
+			for i = 1, GetNumGroupMembers() do
+				local name = UnitName("raid"..i, true)
+				if name ~= UnitName("player") and NTL:IsUnitTrusted(name) then
+					self:ActivateSlave(name)
+				end
+			end
+		else
+			self:Debug("iterating party members")
+			for i = 1, GetNumGroupMembers() do
+				local name = UnitName("party"..i, true)
+				if name ~= UnitName("player") and NTL:IsUnitTrusted(name) then
+					self:ActivateSlave(name)
+				end
 			end
 		end
 	end

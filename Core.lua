@@ -102,7 +102,7 @@ end
 -- handle group member changes
 function ARF:UpdateGroup()
 
-	if GetNumRaidMembers() > 0 then return end
+	if IsInRaid() then return end
 
 	-- remove lame slaves
 	for k, v in pairs(slaves) do
@@ -112,8 +112,8 @@ function ARF:UpdateGroup()
 	end
 	
 	-- add new trusted members
-	if GetNumPartyMembers() > 0 then
-		for i = 1, GetNumPartyMembers() do
+	if GetNumGroupMembers() > 0 then
+		for i = 1, GetNumGroupMembers() do
 			local name = UnitName("party"..i, true)
 			if not slaves[name] and NTL:IsUnitTrusted(name) then
 				self:ActivateSlave(name)
@@ -172,6 +172,7 @@ end
 
 -- handle NPC gossip windows
 function ARF:GOSSIP_SHOW(event)
+	if state == sNOTFOLLOWING then
 		self:RetryFollow()
 	end
 end
@@ -190,21 +191,18 @@ function ARF:MasterActivate()
 	end
 	
 	-- events
-	self:RegisterEvent("PARTY_MEMBERS_CHANGED", "UpdateGroup")
-	self:RegisterEvent("RAID_ROSTER_UPDATE", "UpdateGroup")
+	self:RegisterEvent("GROUP_ROSTER_UPDATE", "UpdateGroup")
 	
 	-- set state
 	activated = true
 	
 	-- activate trusted party members
-	if GetNumRaidMembers() == 0 then
-		if GetNumPartyMembers() > 0 then
-			self:Debug("iterating party members")
-			for i = 1, GetNumPartyMembers() do
-				local name = UnitName("party"..i, true)
-				if name ~= UnitName("player") and NTL:IsUnitTrusted(name) then
-					self:ActivateSlave(name)
-				end
+	if GetNumGroupMembers() > 0 and not IsInRaid() then
+		self:Debug("iterating party members")
+		for i = 1, GetNumGroupMembers() do
+			local name = UnitName("party"..i, true)
+			if name ~= UnitName("player") and NTL:IsUnitTrusted(name) then
+				self:ActivateSlave(name)
 			end
 		end
 	end
